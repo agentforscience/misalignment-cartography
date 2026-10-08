@@ -1,0 +1,21 @@
+{
+ "n_items": 240,
+ "n_cells": 704,
+ "studies_per_cell": 1000,
+ "alpha": 0.05,
+ "overall_null_rate": 0.5937627840909091,
+ "overall_null_rate_non_placebo": 0.5237098214285714,
+ "ref_class_counts": {
+  "latent_only": 28,
+  "behavioural": 10,
+  "none": 6
+ },
+ "ref_class_counts_placebo": {
+  "latent_only": 9,
+  "none": 5,
+  "behavioural": 2
+ },
+ "seed": 42,
+ "n_perm": 5000,
+ "n_boot": 2000
+}

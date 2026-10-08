@@ -1,0 +1,50 @@
+\section{Introduction}
+\label{sec:intro}
+
+``The intervention did not change the behavior'' is one of the most common sentences in alignment research, and one of the hardest to interpret.
+A steering vector that leaves outputs unchanged, a system prompt that fails to reduce sycophancy, an ablation with no measurable effect: each of these is a null result, and each is read in two opposite ways.
+One reading says the behavior is robust to this kind of intervention.
+The other says the experiment failed to detect something that was there.
+The two readings lead to opposite safety conclusions, so it matters which one the evidence supports.
+
+A null result is the joint product of a model and an experimental design.
+The same intervention on the same model can be scored by whether the sampled answer changes, whether the most likely answer changes, or whether the answer logits move; it can be tested on 20 items or 200.
+If these choices largely fix whether a study returns a null, then a null says less about the model than it appears to.
+Other fields have met this problem before.
+Multiverse and specification-curve analyses in psychology run every defensible analysis of one dataset and report how the conclusion varies~\cite{steegen2016increasing,simonsohn2020specification}.
+Work on evaluation statistics for language models addresses sample size and variance~\cite{miller2024adding,card2020little}, and work on steering vectors shows that their effects vary widely across inputs~\cite{tan2024analyzing}.
+However, we know of no study that takes one fixed set of alignment interventions through a full grid of design choices and maps where the nulls fall.
+
+We build such a map for one behavior, sycophancy (see \figref{fig:overview}).
+We run eleven interventions at four levels of granularity (prompt, all-layer activation, single-layer activation, and attention head), including a placebo at each level, on four \qwen models from 0.5B to 7B parameters~\cite{qwen2024qwen25}, using the same 240 evaluation items from the model-written sycophancy evaluations~\cite{perez2022discovering}.
+We then treat each of the 44 model--intervention pairs as a population from which we draw simulated studies: 1000 resamples for each of four metrics and four sample sizes, 704 design cells in total.
+The fraction of studies in a cell with $p \ge .05$ is that cell's null rate.
+Because every cell uses the same underlying items, we can also estimate a reference effect for each intervention on the full pool and ask what the nulls are made of.
+
+Our hypothesis has two parts.
+The first is that nulls cluster along design features: metric, intervention granularity, and model scale.
+The second is that this clustering reflects a methodological blind spot, so that most nulls occur where a real effect exists.
+We fixed one asymmetry before collecting data.
+Metric and sample size are measurement-side features: the underlying effect is identical across their levels, so any difference in null rate is methodological by construction.
+Granularity and scale change the intervention or the model, so clustering there could reflect different true effects.
+
+{\bf What do we find?}
+Nulls cluster strongly, but on the measurement side.
+The null rate is 0.81 for a sampled answer, 0.80 for the greedy answer, 0.52 for answer probability, and 0.25 for the logit margin (within-unit permutation $p = 0.0002$).
+Moving from an answer-level metric to the logit margin changes the null rate by 0.56, more than moving from 20 to 200 items (0.34).
+Granularity does not organize the nulls (permutation $p = 0.88$), and model scale has no monotone effect.
+The second part of the hypothesis is not supported as we pre-specified it.
+Only 14\% (95\% CI 5--27\%) of nulls from non-placebo interventions fall on interventions that demonstrably change the model's answers.
+Instead, 80\% (62--93\%) fall on interventions that shift the answer logits without reliably flipping answers, and 6\% fall on the single intervention with no detectable effect.
+The typical null in our study is neither a missed behavioral effect nor an inert intervention: the intervention moves the model internally by an amount too small to change what it says.
+
+In summary, our contributions are:
+\begin{itemize}[leftmargin=*,itemsep=0pt,topsep=0pt]
+    \item We propose a controlled multiverse design for alignment interventions that holds model, intervention, and items fixed while varying metric and sample size, and pairs each design cell with a full-pool reference effect.
+    \item We map null rates over 704 design cells built from real outputs of four models under eleven sycophancy interventions, and show that metric choice explains 32\% of the variance in null rate while granularity explains 2\%.
+    \item We classify every null by the reference effect of its intervention and show that 80\% of non-placebo nulls are logit-level shifts that leave answers unchanged, which neither the ``robustness'' nor the ``blind spot'' reading describes well.
+    \item We document three results that complicate standard practice: placebo interventions are not inert, attribution-selected heads can do less than random heads, and logit-level and answer-level metrics can disagree in sign.
+\end{itemize}
+
+The evidence covers one behavior, one model family, and a forced-choice format; we discuss these limits in \secref{sec:discussion}.
+\Secref{sec:related} reviews related work, \secref{sec:method} describes the design, \secref{sec:results} reports results, and \secref{sec:conclusion} concludes.

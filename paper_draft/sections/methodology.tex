@@ -1,0 +1,152 @@
+\section{Methodology}
+\label{sec:method}
+
+\begin{figure}[t]
+    \centering
+    \resizebox{0.98\linewidth}{!}{\input{figures/overview}}
+    \caption{Overview of the design. Each model--intervention pair (a \emph{unit}) is run once on 240 shared items. From the recorded outputs we derive two things: a multiverse of resampled studies that gives a null rate for every metric and sample size, and a reference effect on the full pool that classifies the unit. Comparing the two tells us where nulls cluster and what kind of underlying effect they sit on.}
+    \label{fig:overview}
+\end{figure}
+
+\subsection{Problem formulation}
+\label{sec:formulation}
+
+Let a \emph{unit} $u = (m, i)$ be a model $m$ paired with an intervention $i$.
+For each evaluation item $j$ and metric $k$, we record a per-item score $y^{k}_{u,j}$ under the intervention and $y^{k}_{m,j}$ at baseline.
+A \emph{study} is a tuple $(u, k, n)$: it draws $n$ items, runs a paired two-sided test of intervention against baseline on metric $k$, and reports a \emph{null} if $p \ge \alpha$, with $\alpha = .05$.
+The \emph{null rate} of a design cell $(u, k, n)$ is the fraction of studies in that cell that report a null.
+Our main question is how the null rate depends on four design features: metric $k$, sample size $n$, the granularity of intervention $i$, and the scale of model $m$.
+
+Metric and sample size are \emph{measurement-side} features.
+Within a unit, the model outputs are identical across their levels, so a difference in null rate between metrics is methodological by construction.
+Granularity and scale are \emph{effect-side} features: changing them changes the intervention or the model, so a difference in null rate may reflect a truly different effect.
+We fixed this asymmetry in the plan before collecting data, and it is why we test the ``blind spot'' interpretation separately (H4 below).
+
+We test four hypotheses.
+{\bf H1 (metric):} holding model, intervention, and items fixed, null rate differs by metric, with answer-level metrics giving more nulls than continuous ones.
+{\bf H2 (granularity):} null rate differs by intervention granularity.
+{\bf H3 (scale):} null rate differs by model size.
+{\bf H4 (blind spot):} among nulls from non-placebo interventions, the majority occur where the reference analysis shows a real behavioral effect.
+
+\subsection{Models, data, and prompt}
+
+\para{Models.}
+We use \qwen at 0.5B, 1.5B, 3B, and 7B parameters~\cite{qwen2024qwen25}, run locally on one NVIDIA RTX A6000 with batch size 8.
+We choose open-weight models because three of our four intervention types need access to activations.
+The three smaller models run in float32.
+The 7B model runs in bfloat16 with the unembedding computed in float32, because the GPUs were shared.
+
+\para{Data.}
+We use the sycophancy sets from the model-written evaluations of \citet{perez2022discovering}: NLP survey, PhilPapers 2020, and political typology, restricted to binary-choice items.
+Each item contains a user biography that implies a view, followed by a two-option question; one option matches the user's implied view.
+We draw a seeded sample balanced on which letter is the sycophantic one: 32 train and 80 evaluation items per domain, disjoint.
+The 96 train items are used only to build interventions.
+The 240 evaluation items are identical across all models and conditions.
+
+\para{Prompt.}
+We use the default \qwen system prompt, the item as the user turn, and an assistant turn prefilled with `` (\,'' so that the next token is the answer letter.
+One forward pass per item gives the full next-token distribution, from which we compute all metrics.
+Mean probability mass on the two answer letters is at least 0.93 in every condition except \intv{S\_0.3} on 7B, where it is 0.90.
+
+\subsection{Interventions}
+
+\begin{table}[t]
+    \centering
+    \caption{The eleven interventions, grouped by granularity. Each granularity has one placebo ($\dagger$) that matches the form of the real intervention but is not aimed at sycophancy. Layer, doses, and head counts were fixed in advance and not tuned on evaluation items.}
+    \label{tab:interventions}
+    \small
+    \begin{tabular}{@{}llp{8.6cm}@{}}
+        \toprule
+        \textbf{Granularity} & \textbf{Name} & \textbf{What it does} \\
+        \midrule
+        Prompt & \intv{P\_system} & System instruction not to tailor answers to the user's views \\
+               & \intv{P\_user} & User-turn request to ignore the stated views \\
+               & \intv{P\_placebo}$^\dagger$ & Irrelevant formatting instruction \\
+        \midrule
+        All layers & \intv{D\_ablate} & Project the sycophancy direction out after every block \\
+                   & \intv{D\_ablate\_rand}$^\dagger$ & Same with a random direction \\
+        \midrule
+        Single layer & \intv{S\_0.1}, \intv{S\_0.3} & Subtract the direction at the middle layer, scaled to 0.1 or 0.3 of the mean residual norm \\
+                     & \intv{S\_rand\_0.3}$^\dagger$ & Same with a random direction at dose 0.3 \\
+        \midrule
+        Head & \intv{H\_top1}, \intv{H\_topk} & Zero-ablate the top 1 head or the top 2\% of heads by attribution \\
+             & \intv{H\_randk}$^\dagger$ & Zero-ablate the same number of random heads \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\Tabref{tab:interventions} lists the interventions.
+We choose four granularities because they span the range used in practice, from editing the prompt to editing a handful of attention heads.
+
+\para{Sycophancy direction.}
+Following the contrastive approach of \citet{rimsky2023steering}, we append the sycophantic or the non-sycophantic letter to each train prompt, read the residual stream after the middle block (index $L/2$ for a model with $L$ blocks) at the letter position, and take the mean difference over the 96 train items, normalized to unit length.
+\intv{D\_ablate} projects this direction out of the output of every block, in the style of \citet{arditi2024refusal}.
+\intv{S\_0.1} and \intv{S\_0.3} subtract the direction at the middle block at every position, scaled to 0.1 or 0.3 of the mean residual norm at that block.
+
+\para{Head selection.}
+We score each attention head by gradient $\times$ activation attribution to the sycophancy logit margin, using 48 of the train items, and zero-ablate the top-scoring head (\intv{H\_top1}) or the top 2\% of heads (\intv{H\_topk}; 7, 7, 12, and 16 heads for the four models).
+\intv{H\_randk} ablates the same number of heads chosen at random.
+
+\subsection{Metrics}
+
+We compute four per-item metrics from the same next-token distribution.
+Let $s$ be the sycophantic letter and $\bar{s}$ the other one.
+\begin{itemize}[leftmargin=*,itemsep=0pt,topsep=0pt]
+    \item \msample: one draw at temperature 1 equals $s$ (binary).
+    \item \mgreedy: the most likely token equals $s$ (binary).
+    \item \mprob: $P(s) / (P(\texttt{A}) + P(\texttt{B}))$.
+    \item \mlogit: the logit margin, $\mathrm{logit}(s) - \mathrm{logit}(\bar{s})$.
+\end{itemize}
+The first two are \emph{answer-level} metrics: they record what the model says.
+The last two are continuous and record how strongly it prefers one answer.
+All four are in common use, and nothing about the experiment changes between them except what is written down.
+
+\subsection{Multiverse of studies}
+
+\begin{algorithm}[t]
+\caption{Null rate of one design cell}
+\label{alg:multiverse}
+\begin{algorithmic}[1]
+\Require unit $u$, metric $k$, sample size $n$, per-item scores for 240 items, $R = 1000$
+\State $c \gets 0$
+\For{$r = 1, \dots, R$}
+    \State Draw $n$ items with replacement from the 240-item pool
+    \If{$k = \msample$}
+        \State Draw fresh Bernoulli answers from the recorded $P(s)$, for baseline and intervention
+    \EndIf
+    \State $p \gets$ exact McNemar test if $k$ is binary, paired $t$-test otherwise \Comment{two-sided}
+    \If{$p \ge .05$}
+        \State $c \gets c + 1$ \Comment{this study reports a null}
+    \EndIf
+\EndFor
+\State \Return $c / R$
+\end{algorithmic}
+\end{algorithm}
+
+Algorithm~\ref{alg:multiverse} gives the procedure for one cell.
+We use $n \in \{20, 50, 100, 200\}$, which covers the range from a quick check to a moderately sized evaluation.
+With 44 units, 4 metrics, and 4 sample sizes, the map has 704 cells and 704,000 simulated studies.
+The model outputs are real; only the sampling of items into studies is simulated.
+
+\subsection{Reference effects}
+\label{sec:reference}
+
+To interpret a null we need to know what the intervention does when measured as well as we can.
+For each unit we test the intervention against baseline on all 240 items, using a paired $t$-test for the logit margin and an exact McNemar test for the greedy answer, with Holm correction across the 44 units.
+We then assign one of three classes:
+\begin{itemize}[leftmargin=*,itemsep=0pt,topsep=0pt]
+    \item \behav: the greedy sycophantic-answer rate changes.
+    \item \latent: the logit margin changes, but the greedy rate does not.
+    \item \noeff: neither changes.
+\end{itemize}
+We pre-specified that nulls in \behav units count as missed effects, and that nulls in \latent units are reported separately, because a logit shift that flips no answers is arguably robustness at the behavioral level.
+
+\subsection{Statistical analysis}
+
+Cells that share a unit are not independent, so we use resampling methods that respect the unit structure.
+For metric and sample size we use within-unit permutation tests (5000 permutations) with the range of marginal null rates as the statistic.
+For granularity we permute intervention labels.
+For model scale we report descriptive results only, because four models from one family do not support an inferential claim.
+Confidence intervals come from a cluster bootstrap over the 44 units (2000 resamples).
+We report shares of variance from a type-II ANOVA on cell null rates as a descriptive summary and do not rely on its $F$-tests.
+Analyses that we added after seeing the results are marked as exploratory.

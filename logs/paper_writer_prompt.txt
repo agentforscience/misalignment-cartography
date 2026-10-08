@@ -1,0 +1,758 @@
+You are an academic paper writer. Generate a complete NEURIPS style paper
+based on the experiment results provided.
+
+════════════════════════════════════════════════════════════════════════════════
+                         IMPORTANT: BEFORE YOU START
+════════════════════════════════════════════════════════════════════════════════
+
+Before writing any content, you MUST complete these steps:
+
+1. READ THE SKILL: Review the paper-writer skill at .claude/skills/paper-writer/SKILL.md
+2. READ THE STYLE GUIDE: Study templates/paper_writing/lab_style_guide.md carefully
+3. REVIEW EXAMPLES: Browse paper_examples/ for formatting and language patterns:
+   - Look at sections/1.introduction.tex for language style
+   - Look at tables/*.tex for table formatting
+   - Look at commands/*.tex for macro usage
+4. VERIFY COMMAND TEMPLATES: Command templates (math.tex, general.tex, macros.tex) are pre-copied to paper_draft/commands/
+
+CRITICAL: Reference example papers for FORMATTING and LANGUAGE STYLE only.
+Do NOT copy content, phrasing, or narrative structure from the example papers.
+The examples are in a different research domain - focus only on presentation style.
+
+════════════════════════════════════════════════════════════════════════════════
+                            EXPERIMENT REPORT
+════════════════════════════════════════════════════════════════════════════════
+
+# Misalignment Cartography: where do null results sit in the design space of an alignment experiment?
+
+## 1. Executive summary
+
+**Question.** When an intervention meant to reduce a misaligned behaviour "does nothing", is that mostly a
+fact about the model, or about how the experiment was designed (metric, intervention granularity, model
+scale)?
+
+**What was done.** Eleven interventions against sycophancy (prompt-level, all-layer direction ablation,
+single-layer steering, attention-head ablation, with placebo versions of each) were run on four open-weight
+chat models (Qwen2.5-Instruct 0.5B, 1.5B, 3B, 7B) over the same 240 items. Each of the 44
+model x intervention pairs was then analysed as 16,000 resampled "studies" spanning 4 metrics x 4 sample
+sizes, giving a 704-cell map of how often a study returns p >= .05.
+
+**Findings.**
+
+- **Metric choice is the dominant axis.** With model, intervention and items held fixed, the null rate is
+  0.81 for a sampled answer, 0.80 for the greedy answer, 0.52 for answer probability and 0.25 for the logit
+  margin (within-unit permutation p = 0.0002). Metric accounts for 32% of the variance in null rate across
+  cells, sample size for 10%, model for 5%, granularity for 2%.
+- **Granularity does not organise the nulls** (permutation p = 0.88). **Model scale has no monotone effect
+  on the overall null rate**, though the gap between answer-level and logit-level metrics is wider in the
+  two larger models (exploratory).
+- **The "blind spot, not robustness" half of the hypothesis is not supported as pre-specified.** Only 14%
+  (95% CI 5-27%) of nulls from non-placebo interventions fall on interventions that demonstrably change the
+  model's answers. 80% (62-93%) fall on interventions that shift the answer logits but do not reliably flip
+  answers; 6% on an intervention with no detectable effect at all.
+
+**Implication.** A null on an answer-level metric and a null on a logit-level metric are different claims,
+and in this study they disagree most of the time. Most nulls here are neither missed behavioural effects nor
+evidence that the intervention is inert: the intervention moves the model internally by an amount too small
+to change what it says. Whether that counts as robustness depends on which claim is being made, and a report
+of a null should say which.
+
+The evidence is one behaviour, one model family and a forced-choice format; see section 6.
+
+## 2. Research question and motivation
+
+Hypothesis as given: *null results in alignment experiments cluster along specific experimental design
+features (evaluation metric choice, intervention granularity, model scale), suggesting systematic
+methodological blind spots rather than genuine alignment robustness.*
+
+This has two parts, tested separately:
+
+1. Clustering: null probability depends on metric (H1), granularity (H2), scale (H3).
+2. Interpretation: nulls mostly occur where a real effect exists (H4).
+
+Metric and sample size are measurement-side: the underlying effect is identical across their levels, so any
+difference in null rate is methodological by construction. Granularity and scale change the intervention or
+the model, so clustering there could reflect genuinely different effects. This asymmetry was fixed in
+`planning.md` before any data were collected.
+
+### Background (from memory, not a gathered corpus)
+
+The resource-finding stage was skipped for this workspace: there is no `literature_review.md`,
+`resources.md`, `papers/` or `code/`. The framing draws on multiverse / specification-curve analysis
+(Steegen et al. 2016; Simonsohn et al. 2020), evaluation statistics for LLMs (Miller 2024), contrastive
+activation steering (Rimsky et al. 2023), steering reliability (Tan et al. 2024) and the model-written
+sycophancy evaluations (Perez et al. 2022). These citations were not re-checked against the papers in this
+session.
+
+## 3. Experimental setup
+
+**Models.** Qwen2.5-Instruct 0.5B, 1.5B, 3B, 7B, run locally on an NVIDIA RTX A6000 (48 GB), batch size 8,
+one forward pass per item, no sampling parameters (next-token distribution read directly). 0.5B-3B in
+float32; 7B in bfloat16 with the unembedding in float32, because the GPUs were shared. `OPENROUTER_KEY` was
+not set in this environment, so no API models were used.
+
+**Data.** Anthropic model-written-evals sycophancy sets (NLP survey, PhilPapers 2020, political typology),
+binary-choice items only. Seeded (42) sample balanced on which letter is the sycophantic one: 32 train + 80
+evaluation items per domain, disjoint; 96 train items build the interventions, 240 evaluation items are used
+for every model and condition (`datasets/processed/items.json`).
+
+**Prompt.** Default Qwen system prompt, the item as the user turn, assistant turn prefilled with ` (` so the
+next token is the answer letter. Mean probability mass on `A`/`B` is >= 0.93 in every condition except 7B
+`S_0.3` (0.90). Full prompt strings are in each `results/model_outputs/*_meta.json`.
+
+**Interventions.**
+
+| Granularity | Name | What it does |
+|---|---|---|
+| prompt | `P_system` | system instruction not to tailor answers to the user's views |
+| prompt | `P_user` | user-turn request to ignore the stated views |
+| prompt | `P_placebo` | irrelevant formatting instruction (placebo) |
+| all layers | `D_ablate` | project the sycophancy direction out after every block |
+| all layers | `D_ablate_rand` | same with a random direction (placebo) |
+| single layer | `S_0.1`, `S_0.3` | subtract the direction at the middle layer, 0.1 / 0.3 x mean residual norm |
+| single layer | `S_rand_0.3` | same with a random direction (placebo) |
+| head | `H_top1`, `H_topk` | zero-ablate the top 1 / top 2% of heads by gradient x activation attribution |
+| head | `H_randk` | zero-ablate the same number of random heads (placebo) |
+
+The direction is a difference of means between sycophantic and non-sycophantic answer completions at the
+middle layer, from train items. Layer, doses and head counts were fixed in advance and not tuned.
+
+**Metrics** (per item): `sample` (one T=1 draw equals the sycophantic letter), `greedy` (argmax equals it),
+`prob` (P(syc) / (P(A)+P(B))), `logit` (logit margin, sycophantic minus other).
+
+**Multiverse.** A study is (model, intervention, metric, n): n items resampled with replacement from the 240,
+n in {20, 50, 100, 200}, paired two-sided test against baseline (exact McNemar for binary metrics, paired t
+for continuous), null if p >= .05. 1000 studies per cell, 704 cells. For `sample`, each study draws fresh
+Bernoulli answers from the model's recorded next-token probability.
+
+**Reference effects.** Each model x intervention is tested on all 240 items with Holm correction over the 44
+units, and classed `behavioural` (greedy answer rate changes), `latent_only` (logit margin changes, greedy
+rate does not) or `none`.
+
+**Statistics.** Within-unit permutation tests for metric and n (5000 permutations), permutation over
+intervention labels for granularity, cluster bootstrap over the 44 units for CIs (2000 resamples), type-II
+ANOVA for variance shares (descriptive only: cells are not independent, so its F-tests are not relied on).
+
+**Cost and time.** No API spend. GPU time about 18 minutes for all four models (3B was the slowest at 8
+minutes on a contended GPU); analysis 90 seconds on CPU. Software: Python 3.14.2, torch 2.14.1+cu130,
+transformers 5.19.0, numpy 2.5.2, pandas 3.0.6, scipy 1.18.1, statsmodels 0.15.0.
+
+## 4. Results
+
+### 4.1 Baseline: the behaviour exists and grows with scale
+
+| Model | Greedy sycophantic-answer rate (95% CI) | Mean logit margin |
+|---|---|---|
+| 0.5B | 0.588 (0.522-0.650) | 0.44 |
+| 1.5B | 0.767 (0.708-0.819) | 1.50 |
+| 3B | 0.883 (0.836-0.921) | 7.64 |
+| 7B | 0.929 (0.889-0.958) | 13.45 |
+
+All four exceed the 50% expected without sycophancy (0.5B: p = 0.008; others p < 0.001). The 0.5B model is
+close to chance on two of three domains, so there is little there to reduce.
+
+### 4.2 The map
+
+![Null rate for every design cell](figures/fig1_null_map.png)
+
+Overall null rate is 0.59 (0.52 excluding placebos). The picture is dominated by vertical bands: the left
+half of each panel (`sample`, `greedy`) is mostly dark, the right edge (`logit`) mostly light, for the same
+rows.
+
+### 4.3 Marginal null rates by design feature
+
+![Marginal null rates](figures/fig2_marginal_null_rates.png)
+
+| Feature | Levels: null rate (95% cluster-bootstrap CI) | Test |
+|---|---|---|
+| Metric | sample 0.81 (0.73-0.88), greedy 0.80 (0.71-0.87), prob 0.52 (0.42-0.62), logit 0.25 (0.17-0.34) | permutation p = 0.0002 |
+| Sample size | n=20 0.77, n=50 0.64, n=100 0.53, n=200 0.44 | permutation p = 0.0002 |
+| Granularity | prompt 0.66, all-layer 0.65, single-layer 0.56, head 0.53 | permutation p = 0.88 |
+| Model | 0.5B 0.70, 1.5B 0.55, 3B 0.65, 7B 0.47 | descriptive only (4 models) |
+
+0.0002 is the smallest p-value 5000 permutations can produce. Excluding placebos gives the same ordering
+(metric: 0.76 / 0.74 / 0.44 / 0.15; granularity p = 0.90). At alpha = .01 the metric ordering is unchanged
+(0.87 / 0.86 / 0.64 / 0.34).
+
+Share of cell-level variance in null rate: metric 32%, n 10%, model 5%, granularity 2% (R^2 = 0.48). Adding
+the reference effect size raises R^2 to 0.64 and leaves the metric and n shares unchanged; the remaining 36%
+is specific to individual model x intervention pairs.
+
+**H1 supported. H2 not supported. H3: no monotone trend.**
+
+### 4.4 Reference effects
+
+![Reference effects](figures/fig3_reference_effects.png)
+
+Of 44 units: 10 `behavioural`, 28 `latent_only`, 6 `none`. Among the 28 non-placebo units: 8, 19 and 1.
+
+Three things in this table matter for interpretation:
+
+- **Logit shifts are nearly universal; answer changes are not.** 27 of 28 non-placebo interventions shift the
+  logit margin; 8 change the greedy answer rate.
+- **Placebos are not inert.** 11 of 16 placebo units have a detectable effect and 2 are `behavioural`. On 7B,
+  ablating 16 random heads cuts the sycophantic-answer rate by 37 points (0.93 to 0.56), more than ablating
+  the 16 attribution-selected heads (3 points). So the attribution-based head selection did not find the
+  relevant heads on 7B, and "placebo" null rates are not a clean false-positive baseline.
+- **Metrics can disagree in sign.** In 6 non-placebo units the mean logit margin falls while the greedy
+  sycophantic rate rises slightly, including `P_system` on 1.5B, 3B and 7B (e.g. 1.5B: 2 answers flipped away
+  from sycophancy, 9 towards). None of these greedy changes is significant.
+
+### 4.5 What the nulls are made of (H4)
+
+![Null composition by metric](figures/fig5_null_composition.png)
+
+Share of nulls from non-placebo interventions, by reference class of the intervention:
+
+| Reference class | Units | Share of nulls (95% CI) | Mean null rate in class |
+|---|---|---|---|
+| behavioural: answers change | 8 | 0.14 (0.05-0.27) | 0.25 |
+| latent only: logits shift, answers do not | 19 | 0.80 (0.62-0.93) | 0.62 |
+| none detectable | 1 | 0.06 (0.00-0.19) | 0.91 |
+
+The pre-specified criterion for "blind spot" was that most non-placebo nulls fall in `behavioural` units.
+They do not. Robustness checks: 0.10 excluding n = 20; 0.17 at alpha = .01; 0.11-0.16 within each metric.
+
+The classification depends on the Holm threshold. Five further non-placebo units have a greedy change with
+unadjusted p < .05 (e.g. 1.5B `D_ablate`, -11 points, Holm p = 0.12). Counting those as behavioural raises
+the share to 0.30 (exploratory); still a minority.
+
+When a behavioural effect does exist, the metric decides how often it is missed:
+
+| Null rate in `behavioural` units | n=20 | n=50 | n=100 | n=200 |
+|---|---|---|---|---|
+| sample | 0.77 | 0.50 | 0.26 | 0.10 |
+| greedy | 0.76 | 0.44 | 0.17 | 0.03 |
+| prob | 0.45 | 0.17 | 0.05 | 0.01 |
+| logit | 0.23 | 0.06 | 0.01 | 0.00 |
+
+At n = 50 a greedy-answer study misses a real behavioural change 44% of the time; a logit-margin study, 6%.
+In `latent_only` units a greedy study is null 80-100% of the time at any n, while a logit study at n = 100
+is null 8% of the time.
+
+![Null rate against effect size](figures/fig4_null_vs_effect_size.png)
+
+### 4.6 Metric x scale (exploratory)
+
+Null rate for non-placebo interventions:
+
+| Model | sample | greedy | prob | logit | greedy minus logit |
+|---|---|---|---|---|---|
+| 0.5B | 0.92 | 0.90 | 0.49 | 0.41 | 0.49 |
+| 1.5B | 0.73 | 0.63 | 0.25 | 0.14 | 0.50 |
+| 3B | 0.77 | 0.78 | 0.57 | 0.04 | 0.74 |
+| 7B | 0.63 | 0.66 | 0.45 | 0.02 | 0.64 |
+
+In 3B and 7B, logit-level studies almost never return a null while answer-level studies usually do. The
+baseline margins (7.6 and 13.5 logits) are a plausible reason: a 1-3 logit shift is easy to detect and
+cannot flip an answer held by that margin. This was not a planned test and rests on four models.
+
+## 5. Discussion
+
+**Clustering.** Nulls cluster strongly, but on the measurement side. Choosing an answer-level metric over
+the logit margin moves the null rate by 0.56, more than going from n = 20 to n = 200 (0.34) and far more
+than any difference between granularities or models. The two features the hypothesis names that are
+properties of the intervention and the model, granularity and scale, do not organise the nulls here.
+
+**Blind spot or robustness.** Neither label fits most nulls. Only 6% of non-placebo nulls come from an
+intervention with no detectable effect, so reading these nulls as "the intervention did nothing" would
+usually be wrong. But only 14-30% come from interventions that change answers, so reading them as "missed
+behavioural effects" would usually be wrong too. The typical null is a real, consistent shift in the answer
+logits (same sign in all three domains for 93% of `latent_only` units) that leaves the answer unchanged.
+
+Whether that is a blind spot depends on the claim. For "this intervention does not change what the model
+says in this setting", an answer-level null in a `latent_only` unit is a correct result. For "this
+intervention has no effect on the model" or "this behaviour is robust to this class of intervention", it is
+misleading, since a larger dose of the same intervention often does flip answers (`S_0.1` is `latent_only`
+and `S_0.3` `behavioural` on 1.5B and 3B).
+
+**Surprises.** Random-head ablation outperforming attribution-selected heads on 7B; the anti-sycophancy
+system prompt nudging more answers towards sycophancy than away in three of four models while lowering the
+logit margin; and the `sample` metric being no worse than `greedy` overall.
+
+## 6. Limitations
+
+- **Scope.** One behaviour (sycophancy), one model family, four sizes up to 7B, a forced-choice single-token
+  format. Nothing here shows the pattern holds for free-text behaviour, other failure modes or frontier
+  models. The title's "alignment experiments" is broader than the evidence.
+- **Simulated studies, real outputs.** Model outputs are real, but each "study" is a resample of the same
+  240 items. Cells sharing a model x intervention are not independent, and the pool's sample effect acts as
+  the population effect. One visible consequence: in `none` units the logit-metric null rate at n = 200 is
+  0.71, not the nominal 0.95.
+- **Reference effects are not ground truth.** They come from the same pool at n = 240 with a conservative
+  correction, so `latent_only` includes behavioural effects too small to detect at that size. Section 4.5
+  bounds this (14% to 30%) but does not remove it.
+- **Placebos are not inert**, so there is no clean empirical false-positive rate.
+- **The `sample` metric is one Bernoulli draw from recorded probabilities**, not a generated completion.
+- **7B numerical precision differs** from the other models (bfloat16 body). Its float32 counterpart was not
+  run, so any 7B-specific result could in principle be affected.
+- **Nulls ignore direction.** A significant increase in sycophancy counts as non-null. In placebo cells,
+  27% of logit-metric studies are significant in the increasing direction.
+- **Variance shares are descriptive.** Null rate is bounded and cells are dependent.
+- **No literature corpus and no API models**, as noted in sections 2 and 3.
+- **Scale is confounded** with baseline sycophancy strength, depth and head count; the 4.6 explanation is a
+  hypothesis.
+
+## 7. Conclusions and next steps
+
+Null results in this sycophancy multiverse cluster heavily by evaluation metric and sample size, and not
+detectably by intervention granularity or model scale. Most are not missed behavioural effects: they are
+logit-level shifts that do not change answers. The hypothesis is supported in its claim that nulls are
+design-dependent, for metric only, and not supported in its claim that they mostly hide real behavioural
+effects.
+
+Practical consequence for reporting: state the metric level a null was obtained at, report a continuous
+measure alongside any answer-level one, and run a dose-response before concluding robustness.
+
+Follow-ups, in order of value:
+
+1. Dose-response per intervention, to measure how many `latent_only` units become `behavioural` at higher
+   dose without breaking the model.
+2. A second behaviour and a second model family, to test whether the metric dominance generalises.
+3. Free-text generation with a judged metric, since forced choice is the most favourable case for logit
+   metrics.
+4. Run 7B in float32 and add a held-out item pool for reference effects.
+5. Investigate why random-head ablation is so damaging on 7B (two of the random heads are in layers 0 and 3).
+
+## References
+
+- Perez et al. (2022), Discovering Language Model Behaviors with Model-Written Evaluations (dataset).
+- Rimsky et al. (2023), Steering Llama 2 via Contrastive Activation Addition.
+- Tan et al. (2024), Analyzing the Generalization and Reliability of Steering Vectors.
+- Miller (2024), Adding Error Bars to Evals.
+- Steegen et al. (2016), Increasing Transparency Through a Multiverse Analysis.
+- Simonsohn, Simmons and Nelson (2020), Specification Curve Analysis.
+- Qwen2.5-Instruct models (Alibaba Cloud), via Hugging Face transformers.
+
+## Output locations
+
+- Raw per-item model outputs: `results/model_outputs/<model>.csv`, with `_meta.json` (heads, prompts,
+  device) and `_vectors.pt` (direction, head scores).
+- Analysis tables: `results/evaluations/` (`multiverse_cells.csv` is the full map; `reference_effects.csv`;
+  `supp_*.csv` are the exploratory follow-ups).
+- Figures: `figures/fig1`-`fig5`.
+- Logs: `logs/gpu_run_*.log`, `logs/multiverse.log`, `logs/supplementary.log`.
+
+
+════════════════════════════════════════════════════════════════════════════════
+                            RESEARCH PLAN
+════════════════════════════════════════════════════════════════════════════════
+
+# Planning: Misalignment Cartography
+
+Written before any experiment was run (2026-10-07). Deviations are logged at the end.
+
+## Situation at start of session
+
+- The resource-finder stage was skipped (`.neurico/pipeline_state.json`: `"skipped": true`), so there is
+  no `literature_review.md`, `resources.md`, `papers/`, `datasets/` or `code/`. Background below is from
+  my own knowledge of the literature, not from a gathered corpus.
+- `OPENROUTER_KEY` is not set and no other LLM API key is present, so API models cannot be used.
+- No GPU. 32 CPU cores (shared machine).
+- Consequence: all experiments use real open-weight chat models run locally on CPU
+  (Qwen2.5-Instruct 0.5B / 1.5B / 3B). The 7B model was benchmarked out of budget (~5 s per item on CPU).
+
+## Motivation & Novelty Assessment
+
+### Why This Research Matters
+Alignment papers regularly report "the intervention did not change the behaviour" (a steering vector
+that does nothing, a system prompt that fails to reduce sycophancy, an ablation with no effect). Such
+nulls are read in two opposite ways: as evidence the behaviour is robust, or as a failed experiment.
+Which reading is right matters for safety claims in both directions. If whether one gets a null is
+largely fixed by design choices made before the experiment (metric, where the intervention is applied,
+which model size), then nulls carry much less information about the model than they appear to.
+
+### Gap in Existing Work
+Multiverse / specification-curve analysis (Steegen et al. 2016; Simonsohn et al. 2020) is standard in
+psychology but rarely applied to alignment interventions. Work on evaluation statistics (Miller 2024,
+"Adding Error Bars to Evals") addresses sample size and variance but not the joint structure of
+metric x intervention type x model. Steering-vector reliability work (e.g. Tan et al. 2024) shows
+effects vary across inputs, but does not ask where nulls sit in design space. I know of no study that
+runs one fixed set of interventions through a full grid of design choices and maps the null rate.
+
+### Our Novel Contribution
+A controlled multiverse: the same alignment interventions, on the same items, evaluated under every
+combination of metric, sample size, intervention granularity and model scale. Because every design is
+run on the same underlying item pool, we can also establish a reference effect for each intervention
+and classify each null as "nothing there" or "something there that this design could not see".
+
+### Experiment Justification
+- Experiment 1 (intervention grid): 11 interventions x 3 models x 240 items, recording answer logits.
+  Needed to obtain real model behaviour under each intervention; everything else is derived from it.
+- Experiment 2 (multiverse of simulated studies): resample "studies" of size n from the pool and test
+  each under each metric. Needed to turn raw effects into null rates per design cell.
+- Experiment 3 (clustering analysis): variance decomposition and prediction of nulls from design
+  features. This is the direct test of "nulls cluster along design features".
+- Experiment 4 (null classification against reference effects): the direct test of "blind spots rather
+  than genuine robustness".
+
+## Research Question
+For a fixed target behaviour (sycophancy), does the probability that an intervention experiment returns
+a null depend systematically on (a) evaluation metric, (b) intervention granularity, (c) model scale —
+and are those nulls mostly cases where a real effect exists but the design missed it?
+
+## Hypothesis Decomposition
+- H1 (metric): holding model, intervention and items fixed, null rate differs by metric; coarser
+  metrics (sampled / greedy binary answer) give more nulls than continuous ones (probability, logit diff).
+- H2 (granularity): null rate differs by intervention granularity (prompt-level, all-layer activation,
+  single-layer activation, attention-head).
+- H3 (scale): null rate differs by model size.
+- H4 (blind spot vs robustness): among nulls from non-placebo interventions, the majority occur where
+  the reference analysis shows a real effect.
+
+Important asymmetry, fixed in advance: metric and n are *measurement-side* features — the underlying
+effect is identical across their levels, so a null-rate difference is unambiguously methodological.
+Granularity and scale are *effect-side* features — changing them changes the intervention or the model,
+so a higher null rate there may reflect a truly smaller effect. H2/H3 clustering therefore does not by
+itself imply a blind spot; only H4 speaks to that.
+
+## Proposed Methodology
+
+### Data
+Anthropic model-written-evals sycophancy sets (Perez et al. 2022): NLP survey, PhilPapers 2020
+(binary-choice items only), political typology. Each item is a user biography implying a view plus an
+A/B question; `answer_matching_behavior` is the sycophantic choice, balanced between A and B.
+Seeded stratified sample: 32 train items per domain (96) for building interventions, 80 evaluation
+items per domain (240), disjoint, identical across models.
+
+### Models
+Qwen2.5-0.5B / 1.5B / 3B-Instruct, float32, CPU, default chat template. Single forward pass per item;
+the assistant turn is prefilled with "(" so the next token is the answer letter.
+
+### Interventions (11 + baseline), by granularity
+- Prompt-level: `P_system` (anti-sycophancy system instruction), `P_user` (user-turn request to ignore
+  their stated views), `P_placebo` (irrelevant formatting instruction).
+- All-layer activation: `D_ablate` (project the sycophancy direction out of every layer's output),
+  `D_ablate_rand` (same with a random direction; placebo).
+- Single-layer activation: `S_0.1`, `S_0.3` (subtract the unit sycophancy direction scaled to
+  0.1 / 0.3 of mean residual norm at the middle layer), `S_rand_0.3` (random direction; placebo).
+- Attention-head: `H_top1`, `H_topk` (zero-ablate the 1 / top 2% of heads ranked by gradient x
+  activation attribution to the sycophancy logit difference on train items), `H_randk` (placebo).
+
+The sycophancy direction is a contrastive difference of means (Rimsky et al. 2023 style) on train items
+at the middle layer (index n_layers // 2). Layer, doses and k are fixed here and not tuned on eval data.
+
+### Metrics (per item, per condition)
+- `sample`: one token sampled at T=1 from the full vocabulary equals the sycophantic letter (0/1).
+- `greedy`: full-vocabulary argmax equals the sycophantic letter (0/1).
+- `prob`: P(syc) / (P(A)+P(B)).
+- `logit`: logit(syc) - logit(non-syc).
+
+### Multiverse
+A "study" = (model, intervention, metric, n). For each cell draw 1000 studies by resampling n items
+with replacement from the 240-item pool, n in {20, 50, 100, 200}; paired test intervention vs baseline
+(exact McNemar for binary metrics, paired t for continuous), two-sided, alpha = 0.05. Null = p >= 0.05.
+Cell null rate = fraction of the 1000 studies that are null. 3 x 11 x 4 x 4 = 528 cells.
+
+### Reference effects
+Per model x intervention on the full pool (n=240): paired mean change with 95% CI and paired Cohen's d
+for the logit metric; change in greedy sycophancy rate with CI. Holm correction across the 33
+model x intervention pairs. Three classes:
+- `none`: neither logit nor greedy effect is Holm-significant;
+- `latent_only`: logit effect significant, greedy rate change not;
+- `behavioural`: greedy rate change significant.
+Nulls in `behavioural` cells are counted as missed effects. Nulls in `latent_only` cells are reported
+separately and not counted as either, since a logit shift that flips no answers is arguably robustness
+at the behavioural level.
+
+### Baselines / controls
+- Placebo interventions give the expected null rate when (nominally) nothing is done.
+- "No clustering" baseline: null rate independent of design features; tested by permutation.
+- Baseline sycophancy itself: rate of matching answers vs the 50% expected absent sycophancy.
+
+### Statistical Analysis Plan
+1. Marginal null rates by each feature, CIs by cluster bootstrap over the 33 model x intervention units.
+2. Metric and n (within-unit factors): permutation test shuffling labels within model x intervention
+   x (other factor); statistic = range of marginal null rates.
+3. Granularity (11 interventions) and scale (3 models): descriptive, plus a permutation test over
+   intervention labels for granularity. With 3 models from one family, scale gets no inferential
+   claim beyond the within-item paired comparison.
+4. Type-II ANOVA on cell null rate for share of variance by feature; and the same after adding the
+   reference effect size, to see how much "granularity" and "scale" clustering is just effect size.
+5. H4: share of non-placebo nulls falling in each reference class, with bootstrap CI.
+6. Robustness: alpha = 0.01; excluding n = 20; per-domain breakdown.
+
+## Expected Outcomes
+Support: null rate varies strongly with metric at fixed effect; most non-placebo nulls sit in
+`behavioural` cells. Refutation: null rates flat across metrics, or nulls concentrated in `none` cells
+(i.e. nulls mostly reflect no effect). A mixed outcome is plausible — H1 holding while H4 fails — and
+would mean nulls are design-dependent but still mostly "true".
+
+## Timeline
+Plan 20 min; code 45 min; intervention runs ~90 min (three models in parallel on CPU); analysis 30 min;
+report 30 min.
+
+## Potential Challenges
+- Small models may show weak baseline sycophancy -> measured and reported; interventions cannot
+  reduce what is not there (floor effect), which itself produces nulls and must be flagged.
+- Steering may push probability mass off the answer letters -> record P(A)+P(B) per condition.
+- Placebos may not be truly inert (random activation perturbations do change outputs) -> reference
+  classes are determined empirically, not by label.
+- One behaviour, one model family, three sizes: generalisation to "alignment experiments" at large is
+  limited and will be stated as such.
+
+## Success Criteria
+All 528 cells populated from real model outputs; each of H1-H4 answered with an effect size and
+uncertainty; nulls classified against reference effects; limitations stated.
+
+## Deviations from this plan (logged after the fact)
+
+1. **Two sessions.** The first session (CPU only) was killed at its 2-hour limit with 0.5B complete, 1.5B at
+   8/12 and 3B at 5/12 conditions. Those partial files are kept in `results/model_outputs/partial_cpu_run/`
+   and are not used in any result.
+2. **GPU.** In the second session GPUs were available (RTX A6000), so torch was switched to the cu130 build
+   and all models were rerun from scratch on GPU. The 0.5B GPU logits match the CPU run to within 1e-4 and
+   every greedy answer agrees.
+3. **Fourth model.** Qwen2.5-7B-Instruct was added (the plan dropped it only for CPU budget). Design grid is
+   therefore 4 x 11 x 4 x 4 = 704 cells and Holm correction runs over 44 units, not 528 / 33.
+4. **7B precision.** The GPUs were shared with other jobs, so 7B was run in bfloat16 (body) with the final
+   unembedding computed in float32; the other three models are float32 throughout.
+5. **Supplementary analyses** in `src/supplementary.py` (metric x model table, H4 sensitivity to the Holm
+   threshold, sign disagreement, placebo direction) were added after seeing results and are exploratory.
+
+
+════════════════════════════════════════════════════════════════════════════════
+                          LITERATURE REVIEW
+════════════════════════════════════════════════════════════════════════════════
+
+No literature_review.md found
+
+════════════════════════════════════════════════════════════════════════════════
+                          PAPER REQUIREMENTS
+════════════════════════════════════════════════════════════════════════════════
+
+Generate a complete academic paper with the following structure:
+
+1. TITLE
+   - Clear, specific, informative
+   - Should convey main finding or contribution
+
+2. AUTHOR
+   - Use this exact author line in the \author{} block: NeuriCo
+
+3. ABSTRACT (150-250 words)
+   - Problem statement
+   - Approach
+   - Key results
+   - Significance
+
+4. INTRODUCTION
+   - Research problem and motivation
+   - Gap in existing work
+   - Our contribution (be specific)
+   - Paper organization
+
+5. RELATED WORK
+   - Organized by theme/approach
+   - Position our work relative to prior work
+   - Cite papers from literature review
+
+6. METHODOLOGY
+   - Clear description of approach
+   - Experimental setup
+   - Datasets used
+   - Evaluation metrics
+   - Baselines
+
+7. RESULTS
+   - Present results with tables and figures
+   - Statistical analysis
+   - Comparison to baselines
+   - Ablation studies (if applicable)
+
+8. DISCUSSION
+   - Interpretation of results
+   - Limitations
+   - Broader implications
+
+9. CONCLUSION
+   - Summary of contributions
+   - Key findings
+   - Future work
+
+10. REFERENCES
+   - BibTeX format
+   - All cited papers
+
+════════════════════════════════════════════════════════════════════════════════
+                          OUTPUT FORMAT
+════════════════════════════════════════════════════════════════════════════════
+
+Create a MODULAR LaTeX project with the following directory structure:
+
+paper_draft/
+├── main.tex              # Main file that imports all sections
+├── references.bib        # BibTeX references
+├── sections/
+│   ├── abstract.tex      # Abstract content
+│   ├── introduction.tex  # Introduction section
+│   ├── related_work.tex  # Related work section
+│   ├── methodology.tex   # Methodology section
+│   ├── results.tex       # Results section
+│   ├── discussion.tex    # Discussion section
+│   └── conclusion.tex    # Conclusion section
+├── figures/              # Directory for any generated figures
+├── tables/               # Directory for complex standalone tables
+└── appendix/             # Directory for appendix sections (if needed)
+
+INSTRUCTIONS:
+1. First, create the directory structure above (mkdir -p paper_draft/sections paper_draft/figures paper_draft/tables paper_draft/appendix)
+2. Write main.tex using the EXACT preamble for NEURIPS:
+
+   \documentclass{article}
+   \usepackage[final]{neurips_2025}  % NEURIPS style (neurips_2025.sty is in paper_draft/)
+   \usepackage[hidelinks]{hyperref}  % REQUIRED: clickable links
+   \usepackage{booktabs}  % REQUIRED: professional tables
+   \usepackage{graphicx}
+   \usepackage{amsmath,amssymb}
+
+   % Import command files
+   \input{commands/math}
+   \input{commands/general}
+   \input{commands/macros}
+
+   % Use this bibliography style:
+   \bibliographystyle{plainnat}
+
+   \author{NeuriCo}
+
+   - Use \input{sections/...} to include each section
+   - Use \bibliography{references} for references
+3. Write each section file with COMPLETE content (no placeholders)
+4. Each section file should include its \section{} command
+5. Write references.bib with all citations in BibTeX format
+6. After writing all files, compile the paper:
+   cd paper_draft && pdflatex -interaction=nonstopmode main.tex && bibtex main && pdflatex -interaction=nonstopmode main.tex && pdflatex -interaction=nonstopmode main.tex
+
+This modular structure allows humans to easily:
+- Edit individual sections without navigating a large file
+- Track changes per section
+- Reuse sections across different paper versions
+
+════════════════════════════════════════════════════════════════════════════════
+                          QUALITY REQUIREMENTS
+════════════════════════════════════════════════════════════════════════════════
+
+- Academic tone throughout
+- All claims must be supported by data from the experiment report
+- Proper citations using \cite{} commands
+- Clear figures and tables with proper captions
+- NO placeholder text - every section must have real content
+- The paper MUST compile without errors
+- If compilation fails, debug and fix the LaTeX errors
+
+════════════════════════════════════════════════════════════════════════════════
+                          LAB WRITING STYLE
+════════════════════════════════════════════════════════════════════════════════
+
+Follow these lab-specific conventions to match our paper style:
+
+1. LANGUAGE STYLE:
+   - Use active voice: "We propose", "We examine", "We focus on"
+   - Be direct and confident: "Our main question is...", "We hypothesize that..."
+   - State things clearly and simply - prefer plain language over jargon
+   - Use bold questions as paragraph organizers: {\bf what is X?}
+   - Include specific quantitative claims: "8.97% over baseline"
+   - Avoid fancy wording: "utilize" → "use", "facilitate" → "help"
+
+2. INTRODUCTION STRUCTURE:
+   - Engaging hook (get to the point quickly)
+   - Problem importance
+   - Gap identification
+   - Your approach with method figure reference
+   - Quantitative preview of results
+   - Contribution bullets (3-4 items, action verbs)
+
+3. CONTRIBUTION LISTS:
+   \begin{itemize}[leftmargin=*,itemsep=0pt,topsep=0pt]
+       \item We propose...
+       \item We conduct...
+       \item We complement...
+   \end{itemize}
+
+4. MODULAR COMMANDS STRUCTURE:
+   Command templates are pre-copied to paper_draft/commands/:
+   - math.tex: Math notation macros
+   - general.tex: Formatting macros
+   - macros.tex: Project-specific term definitions (customize this for your paper)
+
+   In main.tex, include:
+   \input{commands/math}
+   \input{commands/general}
+   \input{commands/macros}
+
+5. REFERENCE CONVENTIONS:
+   Use reference macros from math.tex:
+   - \figref{fig:name} for "figure 1" (lowercase, in-sentence)
+   - \Figref{fig:name} for "Figure 1" (capitalized, start of sentence)
+   - \secref{sec:name} for "section 2"
+
+6. TEXT FORMATTING:
+   - Use \para{Header text} for bold paragraph headers
+   - Define method/dataset names with \textsc and \xspace:
+     \newcommand{\methodname}{\textsc{MethodName}\xspace}
+
+7. TABLE FORMATTING:
+   - Use booktabs package (no vertical lines)
+   - Use \resizebox{\textwidth}{!}{...} for wide tables
+   - Use @{} to remove padding at table edges
+   - Use \cmidrule(lr){x-y} for sub-headers
+   - Use \textsc{} for dataset/method names in headers
+   - Bold best results with {\bf ...}
+
+8. FIGURE FORMATTING:
+   - Use 0.32\textwidth for 3-column subfigures
+   - Use 0.95\linewidth for full-width figures
+   - Use \input{figures/legend} for shared legends
+   - Write self-contained captions explaining key observations
+
+9. RESULTS PRESENTATION:
+   - Define \increase and \decrease for colored arrows (green up, red down)
+   - Bold best results in tables
+   - Report confidence intervals when available
+
+10. ALGORITHM STYLING:
+    - Use algpseudocode with [noend]
+    - Use \triangleright for comments
+
+11. HYPERLINKS (REQUIRED):
+    - Always use \usepackage[hidelinks]{hyperref} or with colored links
+    - All citations, section refs, figure refs, table refs must be clickable
+    - This is essential for reader navigation
+
+════════════════════════════════════════════════════════════════════════════════
+                          WORKFLOW: REVIEW AND REFLECT
+════════════════════════════════════════════════════════════════════════════════
+
+Before calling finish, you MUST complete these review steps:
+
+1. REVIEW RESOURCES (at the start):
+   - Read .claude/skills/paper-writer/SKILL.md for detailed guidance
+   - Study templates/paper_writing/lab_style_guide.md for style conventions
+   - Browse paper_examples/ for formatting and language patterns
+
+2. SELF-REFLECTION (before finishing):
+   After writing all sections, review your work against these criteria:
+
+   LANGUAGE CHECK:
+   - [ ] Is the writing clear and jargon-free?
+   - [ ] Are claims specific with quantitative support?
+   - [ ] Is active voice used throughout?
+
+   FORMATTING CHECK:
+   - [ ] Does main.tex include \input{commands/math}, \input{commands/general}, \input{commands/macros}?
+   - [ ] Is hyperref package included for clickable references?
+   - [ ] Do tables use booktabs (no vertical lines)?
+   - [ ] Are best results bolded in tables?
+   - [ ] Are figures/tables properly captioned?
+
+   STRUCTURE CHECK:
+   - [ ] Does introduction follow: hook → importance → gap → approach → preview → contributions?
+   - [ ] Are contribution bullets specific with action verbs?
+   - [ ] Does the paper compile without errors?
+
+3. FIX ISSUES:
+   - Address any issues found in the self-reflection
+   - Re-compile and verify the PDF looks correct
+
+Only after completing this review should you consider the paper finished.

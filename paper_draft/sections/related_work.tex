@@ -1,0 +1,29 @@
+\section{Related Work}
+\label{sec:related}
+
+\para{Multiverse and specification-curve analysis.}
+\citet{steegen2016increasing} propose running the full set of reasonable data-processing choices on one dataset and reporting the resulting ``multiverse'' of outcomes.
+\citet{simonsohn2020specification} formalize a similar idea as specification-curve analysis, with inference over the set of specifications.
+Both aim to show how much a conclusion depends on analyst choices.
+Building on this idea, we apply it to alignment interventions and change the object of study: instead of asking whether one effect survives across specifications, we ask where in design space the null results concentrate.
+
+\para{Statistics of language model evaluation.}
+\citet{miller2024adding} argues for reporting standard errors on evaluations and for paired analyses when models answer the same questions.
+\citet{card2020little} show that many NLP experiments are underpowered, and \citet{dror2018hitchhiker} survey which significance tests fit which evaluation setups.
+The general warning that a non-significant result does not show the absence of an effect is much older~\cite{altman1995absence}.
+This line of work treats sample size and variance for a given metric.
+Unlike it, we study the joint structure of metric, sample size, intervention type, and model, and we find that metric choice matters more than a tenfold change in sample size in our setting.
+
+\para{Sycophancy and its measurement.}
+\citet{perez2022discovering} release model-written evaluations in which a user biography implies a view and the model chooses between two answers, one of which matches that view; they report that sycophancy increases with model size.
+\citet{sharma2023towards} show sycophancy across several free-text settings in deployed assistants.
+We use the forced-choice items of \citet{perez2022discovering} because they allow a single forward pass to yield four metrics at once, from a sampled answer to a logit margin.
+
+\para{Activation-level interventions.}
+Activation steering adds a direction to the residual stream at inference time~\cite{turner2023activation}.
+\citet{rimsky2023steering} compute such directions as a difference of means between contrastive completions and use them to steer sycophancy and other behaviors.
+\citet{arditi2024refusal} ablate a single direction from every layer to remove refusal.
+\citet{michel2019sixteen} show that many attention heads can be removed with little change in task performance, which makes head ablation a natural fine-grained intervention.
+\citet{tan2024analyzing} find that steering-vector effects vary substantially across inputs and often fail to generalize.
+We borrow these interventions without tuning them.
+Our contribution is not a better intervention but a map of how often each one would be reported as a null under different evaluation designs.

@@ -1,0 +1,16 @@
+\begin{tikzpicture}[
+    box/.style={draw, rounded corners=2pt, align=center, font=\small, inner sep=5pt, text width=#1},
+    box/.default=2.7cm,
+    arr/.style={-{Latex[length=2mm]}, thick},
+    node distance=0.55cm]
+  \node[box] (units) {\textbf{44 units}\\4 models $\times$\\11 interventions\\(4 are placebos)};
+  \node[box, right=of units] (out) {\textbf{Model outputs}\\240 shared items,\\baseline and\\intervention};
+  \node[box=3.4cm, right=of out, yshift=1.3cm] (multi) {\textbf{Multiverse}\\4 metrics $\times$ 4 sample sizes;\\1000 resampled studies per cell\\$\rightarrow$ null rate (704 cells)};
+  \node[box=3.4cm, right=of out, yshift=-1.3cm] (ref) {\textbf{Reference effect}\\all 240 items, Holm-corrected\\$\rightarrow$ \behav, \latent\\or \noeff};
+  \node[box=2.6cm, right=of multi, yshift=-1.3cm] (q) {\textbf{Questions}\\Where do nulls\\cluster?\\What are they\\made of?};
+  \draw[arr] (units) -- (out);
+  \draw[arr] (out.east) -- (multi.west);
+  \draw[arr] (out.east) -- (ref.west);
+  \draw[arr] (multi.east) -- (q.west);
+  \draw[arr] (ref.east) -- (q.west);
+\end{tikzpicture}

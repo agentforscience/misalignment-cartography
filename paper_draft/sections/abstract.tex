@@ -1,0 +1,10 @@
+Alignment papers often report that an intervention ``did nothing'' to an unwanted behavior.
+Readers take such null results either as evidence that the behavior is robust or as a failed experiment, and it is rarely clear which reading is right.
+We ask how much of a null is decided by experimental design before any data are collected.
+We run eleven interventions against sycophancy (prompt instructions, all-layer direction ablation, single-layer steering, and attention-head ablation, each with a placebo) on four \qwen models from 0.5B to 7B parameters over the same 240 items.
+We then analyze each of the 44 model--intervention pairs as 16,000 resampled studies that vary the evaluation metric and the sample size, which gives a 704-cell map of how often a study returns $p \ge .05$.
+Metric choice is the dominant axis: with model, intervention, and items held fixed, the null rate is 0.81 for a sampled answer, 0.80 for the greedy answer, 0.52 for answer probability, and 0.25 for the logit margin.
+Metric explains 32\% of the variance in null rate across cells, against 10\% for sample size, 5\% for model, and 2\% for intervention granularity.
+However, most nulls are not missed behavioral effects.
+Only 14\% of nulls from non-placebo interventions come from interventions that demonstrably change answers; 80\% come from interventions that shift the answer logits without reliably flipping answers.
+A null on an answer-level metric and a null on a logit-level metric are therefore different claims, and a report of a null should say which one it makes.

@@ -1,0 +1,43 @@
+\section{Discussion}
+\label{sec:discussion}
+
+\para{Nulls cluster on the measurement side.}
+Choosing an answer-level metric over the logit margin moves the null rate by 0.56.
+That is more than going from $n = 20$ to $n = 200$ (0.34) and far more than any difference between granularities or models.
+The two features in our hypothesis that are properties of the intervention and the model, granularity and scale, do not organize the nulls in this study.
+
+{\bf Is a null a blind spot or robustness?}
+Neither label fits most nulls.
+Only 6\% of non-placebo nulls come from an intervention with no detectable effect, so reading these nulls as ``the intervention did nothing'' would usually be wrong.
+But only 14--30\% come from interventions that change answers, so reading them as ``missed behavioral effects'' would usually be wrong too.
+The typical null sits on a real and consistent shift in the answer logits that leaves the answer unchanged: the shift has the same sign in all three domains for 93\% of \latent units.
+
+Whether that counts as a blind spot depends on the claim.
+For the claim ``this intervention does not change what the model says in this setting'', an answer-level null in a \latent unit is a correct result.
+For the claims ``this intervention has no effect on the model'' or ``this behavior is robust to this class of intervention'', it is misleading, because a larger dose of the same intervention often does flip answers.
+\intv{S\_0.1} is \latent and \intv{S\_0.3} is \behav on the 1.5B, 3B, and 7B models.
+
+\para{Implications for reporting.}
+A null on an answer-level metric and a null on a logit-level metric are different claims, and in this study they disagree most of the time.
+We suggest three practices.
+First, state the metric level at which a null was obtained.
+Second, report a continuous measure next to any answer-level one.
+Third, run a dose-response before concluding that a behavior is robust to an intervention.
+The reverse caution also applies: a significant logit shift is not evidence that behavior changed, and in six units the logit margin and the answer rate moved in opposite directions.
+
+\para{Surprises.}
+Three results ran against our expectations.
+Random-head ablation outperformed attribution-selected heads on 7B by a wide margin; two of the sixteen random heads are in layers 0 and 3, which may explain the damage but which we did not test.
+The anti-sycophancy system prompt lowered the logit margin while nudging more answers toward sycophancy than away from it in three of four models.
+And the \msample metric, which adds sampling noise on top of the answer, was no worse overall than \mgreedy (0.81 against 0.80).
+
+\para{Limitations.}
+\emph{Scope.} We study one behavior, one model family, four sizes up to 7B, and a forced-choice single-token format. Nothing here shows that the pattern holds for free-text behavior, other failure modes, or frontier models. Forced choice is also the most favorable case for logit metrics.
+\emph{Simulated studies.} Model outputs are real, but each study is a resample of the same 240 items. Cells that share a unit are not independent, and the pool's sample effect acts as the population effect. One visible consequence is that in \noeff units the \mlogit null rate at $n = 200$ is 0.71, not the nominal 0.95.
+\emph{Reference effects are not ground truth.} They come from the same pool at $n = 240$ with a conservative correction, so \latent includes behavioral effects too small to detect at that size. The sensitivity analysis bounds this (14\% to 30\%) but does not remove it.
+\emph{Placebos are not inert}, so we have no clean empirical false-positive rate.
+\emph{Nulls ignore direction.} A significant increase in sycophancy counts as non-null; in placebo cells, 27\% of \mlogit studies are significant in the increasing direction.
+\emph{The \msample metric} is one Bernoulli draw from recorded probabilities, not a generated completion.
+\emph{Precision.} The 7B model ran in bfloat16 and the others in float32. We did not run 7B in float32, so 7B-specific results could in principle be affected.
+\emph{Confounds.} Scale is confounded with baseline sycophancy strength, depth, and head count, and the variance shares are descriptive because null rate is bounded and cells are dependent.
+\emph{Literature.} We did not conduct a systematic literature search, so the claim that no prior work maps nulls in this way reflects our knowledge, not a survey.

@@ -1,0 +1,15 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+We mapped where null results fall in the design space of a sycophancy intervention experiment: eleven interventions, four models, four metrics, and four sample sizes, 704 cells in all.
+Nulls cluster heavily by evaluation metric (0.81 for a sampled answer against 0.25 for the logit margin) and by sample size, and not detectably by intervention granularity or model scale.
+Most nulls are not missed behavioral effects.
+Of the nulls from non-placebo interventions, 80\% sit on logit-level shifts that do not change answers, 14\% on interventions that do change answers, and 6\% on an intervention with no detectable effect.
+Our hypothesis is therefore supported in its claim that nulls depend on design, for metric only, and not supported in its claim that nulls mostly hide real behavioral effects.
+
+The key takeaway is that ``the intervention had no effect'' is an incomplete sentence until it names the level at which the effect was measured.
+
+Several follow-ups would test how far this holds.
+The most valuable is a dose-response for each intervention, to measure how many \latent units become \behav at a higher dose without breaking the model.
+A second behavior and a second model family would test whether the dominance of metric generalizes, and free-text generation with a judged metric would test it outside the forced-choice format.
+A held-out item pool for reference effects and a float32 run of the 7B model would remove two of our limitations.

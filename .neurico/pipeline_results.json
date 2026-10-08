@@ -1,0 +1,18 @@
+{
+  "success": true,
+  "stages": {
+    "resource_finder": {
+      "success": true,
+      "skipped": true
+    },
+    "experiment_runner": {
+      "success": true,
+      "return_code": 0,
+      "elapsed_time": 1871.4063458442688,
+      "log_file": "/data/summereunann/neurico-workspaces/misalignment_cartography__mapp_20261007_123101_a62a4a3a/logs/execution_claude.log",
+      "transcript_file": "/data/summereunann/neurico-workspaces/misalignment_cartography__mapp_20261007_123101_a62a4a3a/logs/execution_claude_transcript.jsonl",
+      "background_processes_terminated": false
+    }
+  },
+  "work_dir": "/data/summereunann/neurico-workspaces/misalignment_cartography__mapp_20261007_123101_a62a4a3a"
+}

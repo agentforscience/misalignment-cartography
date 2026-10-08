@@ -1,0 +1,102 @@
+\section{Prompts}
+\label{app:prompts}
+
+All conditions use the \qwen chat template with the assistant turn prefilled with `` (\,''.
+The default system prompt is ``You are Qwen, created by Alibaba Cloud. You are a helpful assistant.''
+The three prompt-level interventions change it as follows.
+\begin{itemize}[leftmargin=*,itemsep=0pt,topsep=0pt]
+    \item \intv{P\_system} appends to the system prompt: ``Give your own honest assessment. Do not tailor your answer to the user's stated views, identity or background.''
+    \item \intv{P\_user} appends to the user turn: ``Please ignore my own views described above and tell me what you actually think is correct.''
+    \item \intv{P\_placebo} appends to the system prompt: ``Keep your answer concise and clearly formatted. Use plain language and standard punctuation in your reply.''
+\end{itemize}
+
+\section{Implementation details}
+\label{app:implementation}
+
+\Tabref{tab:arch} gives the architecture-dependent settings.
+The steering layer is the middle block.
+The number of heads ablated by \intv{H\_topk} and \intv{H\_randk} is 2\% of all heads, rounded up.
+Head attribution uses 48 train items.
+Random directions and random heads are drawn with seed 42; the cosine similarity between the random and the sycophancy direction is below 0.02 in absolute value for every model.
+
+\begin{table}[h]
+    \centering
+    \caption{Architecture-dependent settings for each model.}
+    \label{tab:arch}
+    \small
+    \begin{tabular}{@{}lccccc@{}}
+        \toprule
+        \textbf{Model} & \textbf{Blocks} & \textbf{Heads per block} & \textbf{Steering block} & \textbf{Mean residual norm} & \textbf{Heads ablated ($k$)} \\
+        \midrule
+        0.5B & 24 & 14 & 12 & 16.3 & 7 \\
+        1.5B & 28 & 12 & 14 & 53.4 & 7 \\
+        3B & 36 & 16 & 18 & 66.8 & 12 \\
+        7B & 28 & 28 & 14 & 66.3 & 16 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+GPU time for all four models was about 18 minutes, and the multiverse analysis took 90 seconds on CPU.
+We used Python 3.14.2, torch 2.14.1, transformers 5.19.0, numpy 2.5.2, pandas 3.0.6, scipy 1.18.1, and statsmodels 0.15.0.
+The 0.5B model was also run on CPU; its logits match the GPU run to within $10^{-4}$ and every greedy answer agrees.
+
+\section{Deviations from the pre-specified plan}
+\label{app:deviations}
+
+The plan was written before any experiment was run, assuming CPU-only compute and three models.
+We deviated from it in the following ways.
+\begin{itemize}[leftmargin=*,itemsep=0pt,topsep=0pt]
+    \item A first CPU-only session ended before two of the three models had finished. Its partial outputs are not used in any result.
+    \item GPUs became available, so we reran all models from scratch on GPU.
+    \item We added the 7B model, which the plan had dropped only for CPU budget. The grid is therefore $4 \times 11 \times 4 \times 4 = 704$ cells with Holm correction over 44 units, instead of 528 cells and 33 units.
+    \item The 7B model ran in bfloat16 with a float32 unembedding.
+    \item The metric-by-model table, the sensitivity of H4 to the Holm threshold, the sign-disagreement count, and the placebo direction analysis were added after seeing results and are exploratory.
+\end{itemize}
+
+\section{Additional results}
+\label{app:additional}
+
+\Tabref{tab:reference_full} lists the reference effect and class of every unit.
+\Tabref{tab:noeffect} gives null rates in the six \noeff units, and \tabref{tab:placebo_dir} gives the direction of significant results in placebo cells.
+
+\begin{table}[h]
+    \centering
+    \caption{Null rate in the six units with no detectable reference effect. If the true effect were exactly zero, these would be 0.95. They fall below 0.95 for continuous metrics at larger $n$ because the pool's small, non-significant sample effect acts as the population effect under resampling.}
+    \label{tab:noeffect}
+    \small
+    \begin{tabular}{@{}lcccc@{}}
+        \toprule
+        \textbf{Metric} & $n=20$ & $n=50$ & $n=100$ & $n=200$ \\
+        \midrule
+        \msample & 0.99 & 0.98 & 0.98 & 0.94 \\
+        \mgreedy & 1.00 & 1.00 & 0.98 & 0.93 \\
+        \mprob & 0.95 & 0.90 & 0.82 & 0.68 \\
+        \mlogit & 0.92 & 0.89 & 0.83 & 0.71 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{table}[h]
+    \centering
+    \caption{Share of studies in placebo cells that are significant in each direction, averaged over sample sizes and the 16 placebo units.}
+    \label{tab:placebo_dir}
+    \small
+    \begin{tabular}{@{}lcc@{}}
+        \toprule
+        \textbf{Metric} & \textbf{Significant decrease in sycophancy} & \textbf{Significant increase in sycophancy} \\
+        \midrule
+        \msample & 0.10 & 0.01 \\
+        \mgreedy & 0.09 & 0.01 \\
+        \mprob & 0.25 & 0.10 \\
+        \mlogit & 0.31 & 0.27 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{table}[p]
+    \centering
+    \caption{Reference effects for all 44 units on the full 240-item pool. $\Delta$ logit is the mean change in the sycophancy logit margin and $d$ its paired standardized effect. $\Delta$ greedy is the change in the greedy sycophantic-answer rate. Flips counts items whose greedy answer moved away from / toward the sycophantic option. $p$-values are Holm-adjusted over the 44 units. $\dagger$ marks placebos.}
+    \label{tab:reference_full}
+    \scriptsize
+    \input{tables/reference_effects}
+\end{table}
